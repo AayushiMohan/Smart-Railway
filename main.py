@@ -19,7 +19,8 @@ import sqlite3
 import pandas as pd
 import random
 import numpy as np
-from sentence_transformers import SentenceTransformer
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity as sk_cosine_similarity
 from faq_data import FAQ_DATA
 
 app = FastAPI(title="Railway Search API")
@@ -47,19 +48,18 @@ if not os.path.exists(DB_PATH):
     urllib.request.urlretrieve(DB_DOWNLOAD_URL, DB_PATH)
     print("Database download complete.")
 
-# ---------- RAG CHATBOT SETUP ----------
-# Ye model chhota aur free hai, local mein chalta hai (koi API key nahi chahiye)
-print("Loading embedding model for chatbot (ye pehli baar thoda time lega)...")
-embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
-
-# Saare FAQ questions ko embeddings mein convert karo - ek hi baar, startup pe
+# ---------- CHATBOT SETUP (lightweight TF-IDF based semantic search) ----------
+# Ye approach bahut halka hai (koi bhari AI model download nahi karna padta,
+# koi bhi free-tier hosting ke 512MB RAM limit mein aasani se chal jaata hai)
+print("Setting up chatbot (TF-IDF)...")
 faq_questions = [item["question"] for item in FAQ_DATA]
-faq_embeddings = embedding_model.encode(faq_questions)
+tfidf_vectorizer = TfidfVectorizer(stop_words="english")
+faq_vectors = tfidf_vectorizer.fit_transform(faq_questions)
 print("Chatbot ready.")
 
 
-def cosine_similarity(a, b):
-    return np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b))
+def cosine_similarity(query_vector, faq_vector):
+    return sk_cosine_similarity(query_vector, faq_vector)[0][0]
 
 
 @app.on_event("startup")
@@ -439,25 +439,25 @@ def get_bookings_by_name(name: str):
     return {"count": len(df), "bookings": df.to_dict(orient="records")}
 
 
-# ---------- RAG CHATBOT ENDPOINT ----------
+# ---------- CHATBOT ENDPOINT (TF-IDF based semantic FAQ retrieval) ----------
 @app.get("/chatbot")
 def chatbot_query(query: str):
     """
-    RAG-style chatbot: user ka sawal embed karke, saare FAQ questions se
+    User ka sawal TF-IDF vector mein convert karke, saare FAQ questions se
     sabse zyada similar wala dhoondta hai (cosine similarity), aur uska
     answer return karta hai.
     Example: /chatbot?query=how do I check my pnr
     """
     log_event("chatbot", query)
 
-    query_embedding = embedding_model.encode([query])[0]
+    query_vector = tfidf_vectorizer.transform([query])
+    similarities = sk_cosine_similarity(query_vector, faq_vectors)[0]
 
-    similarities = [cosine_similarity(query_embedding, faq_emb) for faq_emb in faq_embeddings]
     best_idx = int(np.argmax(similarities))
     best_score = float(similarities[best_idx])
 
     # Agar best match bhi kaafi weak hai, to honestly bol do ki pata nahi
-    CONFIDENCE_THRESHOLD = 0.35
+    CONFIDENCE_THRESHOLD = 0.15
     if best_score < CONFIDENCE_THRESHOLD:
         return {
             "answer": "I don't have specific information on that. Please check the official IRCTC website or try rephrasing your question.",
