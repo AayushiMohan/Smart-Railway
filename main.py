@@ -34,6 +34,19 @@ app.add_middleware(
 
 DB_PATH = "railway.db"
 
+# ---------- AUTO-DOWNLOAD DATABASE (deployment ke liye) ----------
+# railway.db GitHub repo mein nahi hai (bahut badi file hai), isliye
+# GitHub Release se download karte hain agar wo locally exist nahi karti.
+import os
+import urllib.request
+
+DB_DOWNLOAD_URL = "https://github.com/AayushiMohan/Smart-Railway/releases/download/v1.0.0/railway.db"
+
+if not os.path.exists(DB_PATH):
+    print("railway.db nahi mili locally - GitHub Release se download kar rahe hain...")
+    urllib.request.urlretrieve(DB_DOWNLOAD_URL, DB_PATH)
+    print("Database download complete.")
+
 # ---------- RAG CHATBOT SETUP ----------
 # Ye model chhota aur free hai, local mein chalta hai (koi API key nahi chahiye)
 print("Loading embedding model for chatbot (ye pehli baar thoda time lega)...")
@@ -143,6 +156,8 @@ def analytics_summary():
         "total_bookings": int(bookings),
         "top_searched_routes": top_routes.to_dict(orient="records")
     }
+
+
 # ---------- FARE ESTIMATION (since no dataset has every possible route's exact price) ----------
 # Ye standard Indian Railways jaisi approx per-km rates hain, class ke hisaab se.
 # NOTE: Ye ek ESTIMATE hai (base + per-km rate), asli IRCTC fare thoda alag ho sakta hai
