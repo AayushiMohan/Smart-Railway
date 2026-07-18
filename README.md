@@ -47,7 +47,7 @@ Examples:
 - SQLite
 - Pandas
 - NumPy
-- Sentence Transformers
+- TF-IDF
 
 ### Frontend
 - HTML
