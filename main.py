@@ -1,17 +1,3 @@
-"""
-FastAPI Backend - Railway App Project
-========================================
-Ye backend railway.db (SQLite) se data fetch karke
-API endpoints provide karta hai jo frontend use karega.
-
-Run karne ke liye:
-    uvicorn main:app --reload
-
-Fir browser mein kholo:
-    http://127.0.0.1:8000/docs
-(Ye FastAPI ka auto-generated interactive documentation hai)
-"""
-
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -25,19 +11,15 @@ from faq_data import FAQ_DATA
 
 app = FastAPI(title="Railway Search API")
 
-# CORS enable karna zaroori hai taaki frontend (alag origin se) API ko call kar sake
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],       # abhi ke liye sabko allow kar rahe hain (development ke liye theek hai)
+    allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 DB_PATH = "railway.db"
 
-# ---------- AUTO-DOWNLOAD DATABASE (deployment ke liye) ----------
-# railway.db GitHub repo mein nahi hai (bahut badi file hai), isliye
-# GitHub Release se download karte hain agar wo locally exist nahi karti.
 import os
 import urllib.request
 
@@ -48,9 +30,6 @@ if not os.path.exists(DB_PATH):
     urllib.request.urlretrieve(DB_DOWNLOAD_URL, DB_PATH)
     print("Database download complete.")
 
-# ---------- CHATBOT SETUP (lightweight TF-IDF based semantic search) ----------
-# Ye approach bahut halka hai (koi bhari AI model download nahi karna padta,
-# koi bhi free-tier hosting ke 512MB RAM limit mein aasani se chal jaata hai)
 print("Setting up chatbot (TF-IDF)...")
 faq_questions = [item["question"] for item in FAQ_DATA]
 tfidf_vectorizer = TfidfVectorizer(stop_words="english")
@@ -114,7 +93,6 @@ def get_connection():
     return sqlite3.connect(DB_PATH)
 
 
-# ---------- TEST ENDPOINT ----------
 @app.get("/")
 def read_root():
     return {"message": "Railway Search API is running!"}
@@ -157,11 +135,6 @@ def analytics_summary():
         "top_searched_routes": top_routes.to_dict(orient="records")
     }
 
-
-# ---------- FARE ESTIMATION (since no dataset has every possible route's exact price) ----------
-# Ye standard Indian Railways jaisi approx per-km rates hain, class ke hisaab se.
-# NOTE: Ye ek ESTIMATE hai (base + per-km rate), asli IRCTC fare thoda alag ho sakta hai
-# kyunki usme aur bhi factors hote hain (tatkal, quota, dynamic pricing, etc.)
 FARE_MODEL = {
     "2S": {"base": 20, "per_km": 0.15, "label": "Second Sitting"},
     "SL": {"base": 30, "per_km": 0.35, "label": "Sleeper"},
@@ -191,7 +164,6 @@ def time_to_minutes(day, time_str):
         return None
 
 
-# ---------- CORE ROUTE-FINDING LOGIC (reusable) ----------
 def find_routes(source: str, destination: str):
     """
     Route-based search ka core logic - /search aur /smart-search dono
@@ -238,7 +210,6 @@ def find_routes(source: str, destination: str):
         if src_minutes is not None and dst_minutes is not None and dst_minutes > src_minutes:
             duration_hrs = round((dst_minutes - src_minutes) / 60, 1)
 
-        # Departure hour nikaalo (time-of-day filtering ke liye - smart search mein kaam aayega)
         dep_hour = None
         if pd.notna(row["src_dep_time"]):
             try:
@@ -260,8 +231,6 @@ def find_routes(source: str, destination: str):
 
     return results
 
-
-# ---------- SEARCH ENDPOINT (route-based - koi bhi station pair kaam karega) ----------
 @app.get("/search")
 def search_trains(source: str, destination: str):
     """
@@ -292,8 +261,6 @@ def search_trains(source: str, destination: str):
         "trains": results
     }
 
-
-# ---------- STATION LOOKUP (helper endpoint) ----------
 @app.get("/stations/search")
 def search_station(name: str):
     """
@@ -325,7 +292,6 @@ def search_station(name: str):
     return {"results": df.to_dict(orient="records")}
 
 
-# ---------- TRAIN DETAIL ENDPOINT ----------
 @app.get("/trains/{train_number}")
 def get_train_detail(train_number: str):
     """
@@ -438,8 +404,6 @@ def get_bookings_by_name(name: str):
 
     return {"count": len(df), "bookings": df.to_dict(orient="records")}
 
-
-# ---------- CHATBOT ENDPOINT (TF-IDF based semantic FAQ retrieval) ----------
 @app.get("/chatbot")
 def chatbot_query(query: str):
     """
@@ -456,7 +420,6 @@ def chatbot_query(query: str):
     best_idx = int(np.argmax(similarities))
     best_score = float(similarities[best_idx])
 
-    # Agar best match bhi kaafi weak hai, to honestly bol do ki pata nahi
     CONFIDENCE_THRESHOLD = 0.15
     if best_score < CONFIDENCE_THRESHOLD:
         return {
@@ -498,13 +461,13 @@ def matches_time_filter(departure_time, filter_type):
     except Exception:
         return True
 
-    if filter_type == "night":       # "overnight"/"night" -> 8 PM se 4 AM tak
+    if filter_type == "night":      
         return hour >= 20 or hour < 4
-    if filter_type == "morning":     # 4 AM - 12 PM
+    if filter_type == "morning":
         return 4 <= hour < 12
-    if filter_type == "afternoon":   # 12 PM - 5 PM
+    if filter_type == "afternoon":
         return 12 <= hour < 17
-    if filter_type == "evening":     # 5 PM - 8 PM
+    if filter_type == "evening":
         return 17 <= hour < 20
     return True
 
@@ -560,16 +523,13 @@ def smart_search(query: str):
     if not source_code or not dest_code:
         raise HTTPException(status_code=404, detail="Could not recognize the source/destination stations in your query.")
 
-    # Existing route-search logic reuse karo
     base_result = search_trains(source_code, dest_code)
     trains = base_result["trains"]
 
-    # Time-of-day filter apply karo (agar mention hai)
     time_filter = extract_time_filter(query_lower)
     if time_filter:
         trains = [t for t in trains if matches_time_filter(t.get("departure_time"), time_filter)]
 
-    # Sort preference apply karo
     sort_by = "distance"
     if any(word in query_lower for word in ["cheapest", "cheap", "budget"]):
         sort_by = "cheapest"
