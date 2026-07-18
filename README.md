@@ -2,9 +2,9 @@
 
 A full-stack Railway Search, Booking, Analytics, and RAG-based Chatbot application built using FastAPI, SQLite, HTML, CSS, and JavaScript.
 
-## 📌 Features
+## 📌 Features:
 
-### 🔍 Smart Train Search
+### Smart Train Search
 - Search trains between any source and destination station.
 - Route-based train discovery using railway schedule data.
 - Train details including:
@@ -13,25 +13,25 @@ A full-stack Railway Search, Booking, Analytics, and RAG-based Chatbot applicati
   - Departure & Arrival Time
   - Estimated fares
 
-### 🎫 Simulated Ticket Booking
+### Simulated Ticket Booking
 - Passenger booking form
 - Automatic PNR generation
 - Booking history retrieval
 - PNR-based booking lookup
 
-### 📊 Analytics Dashboard
+### Analytics Dashboard
 - Track visits
 - Track train searches
 - Track bookings
 - Most searched routes
 
-### 🤖 Railway Assistant Chatbot
+### Railway Assistant Chatbot
 - Built using Sentence Transformers
 - Semantic similarity search
 - FAQ retrieval system
 - Confidence-based response ranking
 
-### 🧠 Natural Language Search
+### Natural Language Search
 Examples:
 
 - "Cheapest train from Delhi to Patna"
@@ -40,7 +40,7 @@ Examples:
 
 ---
 
-## 🏗️ Tech Stack
+## Tech Stack
 
 ### Backend
 - FastAPI
@@ -61,7 +61,7 @@ Examples:
 
 ---
 
-## 📂 Dataset
+## Dataset
 
 This project utilizes railway data derived and processed from publicly available railway schedule datasets.
 
@@ -77,7 +77,7 @@ The database is stored locally using SQLite.
 
 ---
 
-## 🧠 RAG-Style Retrieval Pipeline
+## RAG-Style Retrieval Pipeline
 
 User Query
 ↓
@@ -91,42 +91,7 @@ Response Generation
 
 ---
 
-## 🚀 Installation
-
-### Clone Repository
-
-```bash
-git clone https://github.com/your-username/railway-app.git
-cd railway-app
-```
-
-### Install Dependencies
-
-```bash
-pip install -r requirements.txt
-```
-
-### Run FastAPI Server
-
-```bash
-uvicorn main:app --reload
-```
-
-Server runs at:
-
-```text
-http://127.0.0.1:8000
-```
-
-Interactive API Documentation:
-
-```text
-http://127.0.0.1:8000/docs
-```
-
----
-
-## 📌 API Endpoints
+## API Endpoints
 
 ### Train Search
 
@@ -172,7 +137,7 @@ GET /chatbot?query=how do i check my pnr
 
 ---
 
-## 🎯 Future Enhancements
+## Future Enhancements
 
 - Full LLM-powered RAG generation
 - Live train status integration
@@ -181,10 +146,3 @@ GET /chatbot?query=how do i check my pnr
 - Cloud database deployment
 
 ---
-
-## 👩‍💻 Author
-
-**Aayushi Mohan**
-
-- GitHub: https://github.com/AayushiMohan
-- LinkedIn: https://linkedin.com/in/aayushimohan
