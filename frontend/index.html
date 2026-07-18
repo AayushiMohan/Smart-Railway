@@ -565,10 +565,8 @@
   /* ---------- AUTOCOMPLETE ---------- */
   const API_BASE = "https://smart-railway.onrender.com";
 
-  // Page load hote hi ek 'visit' analytics event log karo
   fetch(`${API_BASE}/track/visit`).catch(err => console.log("Visit tracking failed (backend not running?)"));
 
-  // Stats badge ko live numbers se bharo
   async function loadStats(){
     try{
       const res = await fetch(`${API_BASE}/analytics/summary`);
@@ -634,7 +632,6 @@
     `;
   }
 
-  // Page load pe default placeholder dikhao (jab tak koi search na ho)
   renderEmptyState("No searches yet", "Use Smart Search above to find matching trains");
 
   function setupAutocomplete(inputId, listId){
@@ -643,10 +640,9 @@
     let debounceTimer = null;
     let activeIndex = -1;
 
-    input.dataset.code = ""; // yahan selected station code store hoga
-
+    input.dataset.code = ""; 
     input.addEventListener("input", () => {
-      input.dataset.code = ""; // user dobara type kar raha hai, purana selection clear karo
+      input.dataset.code = ""; 
       const query = input.value.trim();
       clearTimeout(debounceTimer);
 
@@ -694,14 +690,12 @@
       list.innerHTML = "";
     }
 
-    // Dropdown ke bahar click karne pe band ho jaye
     document.addEventListener("click", (e) => {
       if (!input.contains(e.target) && !list.contains(e.target)){
         list.classList.remove("show");
       }
     });
 
-    // Keyboard navigation (up/down/enter) - IRCTC jaisa feel
     input.addEventListener("keydown", (e) => {
       const items = list.querySelectorAll(".autocomplete-item");
       if (items.length === 0) return;
@@ -735,8 +729,7 @@
   /* ---------- SEARCH LOGIC ---------- */
   function resolveStationCode(inputId){
     const input = document.getElementById(inputId);
-    if (input.dataset.code) return input.dataset.code;   // dropdown se select kiya gaya
-    // Fallback: agar user ne seedha code type kar diya (jaise "NDLS"), use as-is
+    if (input.dataset.code) return input.dataset.code;
     return input.value.trim().toUpperCase();
   }
 
@@ -774,7 +767,7 @@
     }
   }
 
-  /* ---------- SHARED CARD RENDERER (structured search + smart search dono use karte hain) ---------- */
+  /* ---------- SHARED CARD RENDERER ---------- */
   function renderTrainCards(trains, source, destination){
     const resultsList = document.getElementById("resultsList");
     resultsList.innerHTML = "";
