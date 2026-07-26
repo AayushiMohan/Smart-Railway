@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>RailYatra - Smart Railway</title>
+<title>In Your Service — Railway Search</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;1,9..144,500&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
@@ -565,9 +565,20 @@
   /* ---------- AUTOCOMPLETE ---------- */
   const API_BASE = "https://smart-railway.onrender.com";
 
+  // Page load hote hi ek 'visit' analytics event log karo
   fetch(`${API_BASE}/track/visit`).catch(err => console.log("Visit tracking failed (backend not running?)"));
 
-  async function loadStats(){
+  // Stats badge ko live numbers se bharo - Render free tier "sleep" mode se
+  // wake hone mein 30-60 seconds lag sakte hain, isliye retry karte hain
+  async function loadStats(attempt = 1){
+    const maxAttempts = 6;
+
+    if (attempt === 1){
+      document.getElementById("statVisits").textContent = "…";
+      document.getElementById("statSearches").textContent = "…";
+      document.getElementById("statBookings").textContent = "…";
+    }
+
     try{
       const res = await fetch(`${API_BASE}/analytics/summary`);
       const data = await res.json();
@@ -575,7 +586,10 @@
       document.getElementById("statSearches").textContent = data.total_searches;
       document.getElementById("statBookings").textContent = data.total_bookings;
     } catch(err){
-      console.log("Could not load stats (backend not running?)");
+      console.log(`Stats load attempt ${attempt} failed - server might be waking up...`);
+      if (attempt < maxAttempts){
+        setTimeout(() => loadStats(attempt + 1), 6000); // 6 second baad phir try karo
+      }
     }
   }
   loadStats();
@@ -632,6 +646,7 @@
     `;
   }
 
+  // Page load pe default placeholder dikhao (jab tak koi search na ho)
   renderEmptyState("No searches yet", "Use Smart Search above to find matching trains");
 
   function setupAutocomplete(inputId, listId){
@@ -640,9 +655,10 @@
     let debounceTimer = null;
     let activeIndex = -1;
 
-    input.dataset.code = ""; 
+    input.dataset.code = ""; // yahan selected station code store hoga
+
     input.addEventListener("input", () => {
-      input.dataset.code = ""; 
+      input.dataset.code = ""; // user dobara type kar raha hai, purana selection clear karo
       const query = input.value.trim();
       clearTimeout(debounceTimer);
 
@@ -656,6 +672,13 @@
         try{
           const res = await fetch(`${API_BASE}/stations/search?name=${encodeURIComponent(query)}`);
           const data = await res.json();
+
+          // Race condition fix: agar user ne is dauraan aur type kar diya hai,
+          // to ye response ab "stale" (purani) ho chuki hai - ignore karo
+          if (input.value.trim() !== query){
+            return;
+          }
+
           renderList(data.results || []);
         } catch(err){
           console.error(err);
@@ -690,12 +713,14 @@
       list.innerHTML = "";
     }
 
+    // Dropdown ke bahar click karne pe band ho jaye
     document.addEventListener("click", (e) => {
       if (!input.contains(e.target) && !list.contains(e.target)){
         list.classList.remove("show");
       }
     });
 
+    // Keyboard navigation (up/down/enter) - IRCTC jaisa feel
     input.addEventListener("keydown", (e) => {
       const items = list.querySelectorAll(".autocomplete-item");
       if (items.length === 0) return;
@@ -729,7 +754,8 @@
   /* ---------- SEARCH LOGIC ---------- */
   function resolveStationCode(inputId){
     const input = document.getElementById(inputId);
-    if (input.dataset.code) return input.dataset.code;
+    if (input.dataset.code) return input.dataset.code;   // dropdown se select kiya gaya
+    // Fallback: agar user ne seedha code type kar diya (jaise "NDLS"), use as-is
     return input.value.trim().toUpperCase();
   }
 
@@ -762,12 +788,12 @@
       renderTrainCards(data.trains, source, destination);
 
     } catch(err){
-      statusDiv.textContent = "Error connecting to server. Is the backend running?";
+      statusDiv.textContent = "Server might be waking up (free hosting sleeps after inactivity) - please wait 30-60 seconds and try again.";
       console.error(err);
     }
   }
 
-  /* ---------- SHARED CARD RENDERER ---------- */
+  /* ---------- SHARED CARD RENDERER (structured search + smart search dono use karte hain) ---------- */
   function renderTrainCards(trains, source, destination){
     const resultsList = document.getElementById("resultsList");
     resultsList.innerHTML = "";
@@ -842,7 +868,7 @@
       renderTrainCards(data.trains, data.parsed.source, data.parsed.destination);
 
     } catch(err){
-      statusDiv.textContent = "Error connecting to server. Is the backend running?";
+      statusDiv.textContent = "Server might be waking up (free hosting sleeps after inactivity) - please wait 30-60 seconds and try again.";
       console.error(err);
     }
   }
@@ -915,7 +941,7 @@
       showTicket(booking);
 
     } catch(err){
-      statusDiv.textContent = "Error connecting to server.";
+      statusDiv.textContent = "Server might be waking up - please wait 30-60 seconds and try again.";
       console.error(err);
     }
   }
@@ -988,7 +1014,7 @@
       });
 
     } catch(err){
-      statusDiv.textContent = "Error connecting to server.";
+      statusDiv.textContent = "Server might be waking up - please wait 30-60 seconds and try again.";
       console.error(err);
     }
   }
