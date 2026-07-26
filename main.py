@@ -11,15 +11,17 @@ from faq_data import FAQ_DATA
 
 app = FastAPI(title="Railway Search API")
 
+# CORS 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"],      
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 DB_PATH = "railway.db"
 
+# ---------- AUTO-DOWNLOAD DATABASE ----------
 import os
 import urllib.request
 
@@ -30,6 +32,7 @@ if not os.path.exists(DB_PATH):
     urllib.request.urlretrieve(DB_DOWNLOAD_URL, DB_PATH)
     print("Database download complete.")
 
+# ---------- CHATBOT SETUP ----------
 print("Setting up chatbot (TF-IDF)...")
 faq_questions = [item["question"] for item in FAQ_DATA]
 tfidf_vectorizer = TfidfVectorizer(stop_words="english")
@@ -93,6 +96,34 @@ def get_connection():
     return sqlite3.connect(DB_PATH)
 
 
+@app.get("/debug/db-status")
+def debug_db_status():
+    """
+    Diagnostic endpoint - deployed server pe database sahi se download/load
+    hui hai ya nahi, ye check karne ke liye.
+    """
+    result = {"db_file_exists": os.path.exists(DB_PATH)}
+
+    if result["db_file_exists"]:
+        result["db_file_size_mb"] = round(os.path.getsize(DB_PATH) / (1024 * 1024), 2)
+
+        try:
+            conn = sqlite3.connect(DB_PATH)
+            cursor = conn.cursor()
+            for table in ["stations", "trains", "train_stops", "fares"]:
+                try:
+                    cursor.execute(f"SELECT COUNT(*) FROM {table}")
+                    result[f"{table}_row_count"] = cursor.fetchone()[0]
+                except Exception as e:
+                    result[f"{table}_row_count"] = f"ERROR: {str(e)}"
+            conn.close()
+        except Exception as e:
+            result["db_connection_error"] = str(e)
+
+    return result
+
+
+# ---------- TEST ENDPOINT ----------
 @app.get("/")
 def read_root():
     return {"message": "Railway Search API is running!"}
@@ -135,6 +166,9 @@ def analytics_summary():
         "top_searched_routes": top_routes.to_dict(orient="records")
     }
 
+
+# ---------- FARE ESTIMATION ----------
+
 FARE_MODEL = {
     "2S": {"base": 20, "per_km": 0.15, "label": "Second Sitting"},
     "SL": {"base": 30, "per_km": 0.35, "label": "Sleeper"},
@@ -164,6 +198,7 @@ def time_to_minutes(day, time_str):
         return None
 
 
+# ---------- CORE ROUTE-FINDING LOGIC (reusable) ----------
 def find_routes(source: str, destination: str):
     """
     Route-based search ka core logic - /search aur /smart-search dono
@@ -210,6 +245,7 @@ def find_routes(source: str, destination: str):
         if src_minutes is not None and dst_minutes is not None and dst_minutes > src_minutes:
             duration_hrs = round((dst_minutes - src_minutes) / 60, 1)
 
+        # Departure hour 
         dep_hour = None
         if pd.notna(row["src_dep_time"]):
             try:
@@ -231,6 +267,8 @@ def find_routes(source: str, destination: str):
 
     return results
 
+
+# ---------- SEARCH ENDPOINT ----------
 @app.get("/search")
 def search_trains(source: str, destination: str):
     """
@@ -261,6 +299,8 @@ def search_trains(source: str, destination: str):
         "trains": results
     }
 
+
+# ---------- STATION LOOKUP (helper endpoint) ----------
 @app.get("/stations/search")
 def search_station(name: str):
     """
@@ -292,6 +332,7 @@ def search_station(name: str):
     return {"results": df.to_dict(orient="records")}
 
 
+# ---------- TRAIN DETAIL ENDPOINT ----------
 @app.get("/trains/{train_number}")
 def get_train_detail(train_number: str):
     """
@@ -404,6 +445,8 @@ def get_bookings_by_name(name: str):
 
     return {"count": len(df), "bookings": df.to_dict(orient="records")}
 
+
+# ---------- CHATBOT ENDPOINT (TF-IDF based semantic FAQ retrieval) ----------
 @app.get("/chatbot")
 def chatbot_query(query: str):
     """
@@ -463,7 +506,7 @@ def matches_time_filter(departure_time, filter_type):
 
     if filter_type == "night":      
         return hour >= 20 or hour < 4
-    if filter_type == "morning":
+    if filter_type == "morning":     
         return 4 <= hour < 12
     if filter_type == "afternoon":
         return 12 <= hour < 17
