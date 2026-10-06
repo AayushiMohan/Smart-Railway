@@ -8,20 +8,22 @@ import numpy as np
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity as sk_cosine_similarity
 from faq_data import FAQ_DATA
+from groq import Groq
 
 app = FastAPI(title="Railway Search API")
 
-# CORS 
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
+groq_client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],      
+    allow_origins=["*"],       
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 DB_PATH = "railway.db"
 
-# ---------- AUTO-DOWNLOAD DATABASE ----------
 import os
 import urllib.request
 
@@ -32,7 +34,6 @@ if not os.path.exists(DB_PATH):
     urllib.request.urlretrieve(DB_DOWNLOAD_URL, DB_PATH)
     print("Database download complete.")
 
-# ---------- CHATBOT SETUP ----------
 print("Setting up chatbot (TF-IDF)...")
 faq_questions = [item["question"] for item in FAQ_DATA]
 tfidf_vectorizer = TfidfVectorizer(stop_words="english")
@@ -122,8 +123,6 @@ def debug_db_status():
 
     return result
 
-
-# ---------- TEST ENDPOINT ----------
 @app.get("/")
 def read_root():
     return {"message": "Railway Search API is running!"}
@@ -166,9 +165,6 @@ def analytics_summary():
         "top_searched_routes": top_routes.to_dict(orient="records")
     }
 
-
-# ---------- FARE ESTIMATION ----------
-
 FARE_MODEL = {
     "2S": {"base": 20, "per_km": 0.15, "label": "Second Sitting"},
     "SL": {"base": 30, "per_km": 0.35, "label": "Sleeper"},
@@ -197,8 +193,6 @@ def time_to_minutes(day, time_str):
     except Exception:
         return None
 
-
-# ---------- CORE ROUTE-FINDING LOGIC (reusable) ----------
 def find_routes(source: str, destination: str):
     """
     Route-based search ka core logic - /search aur /smart-search dono
@@ -245,7 +239,6 @@ def find_routes(source: str, destination: str):
         if src_minutes is not None and dst_minutes is not None and dst_minutes > src_minutes:
             duration_hrs = round((dst_minutes - src_minutes) / 60, 1)
 
-        # Departure hour 
         dep_hour = None
         if pd.notna(row["src_dep_time"]):
             try:
@@ -267,8 +260,6 @@ def find_routes(source: str, destination: str):
 
     return results
 
-
-# ---------- SEARCH ENDPOINT ----------
 @app.get("/search")
 def search_trains(source: str, destination: str):
     """
@@ -299,8 +290,6 @@ def search_trains(source: str, destination: str):
         "trains": results
     }
 
-
-# ---------- STATION LOOKUP (helper endpoint) ----------
 @app.get("/stations/search")
 def search_station(name: str):
     """
@@ -312,15 +301,16 @@ def search_station(name: str):
     search_term = name.strip().upper()
 
     query = """
-        SELECT station_code, station_name, station_zone, station_address,
+        SELECT s.station_code, s.station_name, s.station_zone, s.station_address,
                CASE
-                   WHEN station_name LIKE ? THEN 0
-                   WHEN station_name LIKE ? THEN 1
+                   WHEN s.station_name LIKE ? THEN 0
+                   WHEN s.station_name LIKE ? THEN 1
                    ELSE 2
-               END AS relevance
-        FROM stations
-        WHERE station_name LIKE ? OR station_address LIKE ?
-        ORDER BY relevance ASC, station_name ASC
+               END AS relevance,
+               (SELECT COUNT(*) FROM train_stops t WHERE t.station_code = s.station_code) AS stop_count
+        FROM stations s
+        WHERE s.station_name LIKE ? OR s.station_address LIKE ?
+        ORDER BY relevance ASC, stop_count DESC, s.station_name ASC
         LIMIT 100
     """
     params = (f"{search_term}%", f"%{search_term}%", f"%{search_term}%", f"%{search_term}%")
@@ -328,11 +318,9 @@ def search_station(name: str):
     df = pd.read_sql(query, conn, params=params)
     conn.close()
 
-    df = df.drop(columns=["relevance"])
+    df = df.drop(columns=["relevance", "stop_count"])
     return {"results": df.to_dict(orient="records")}
 
-
-# ---------- TRAIN DETAIL ENDPOINT ----------
 @app.get("/trains/{train_number}")
 def get_train_detail(train_number: str):
     """
@@ -350,9 +338,6 @@ def get_train_detail(train_number: str):
         raise HTTPException(status_code=404, detail="Train not found")
 
     return df.to_dict(orient="records")[0]
-
-
-# ---------- BOOKING SYSTEM ----------
 class BookingRequest(BaseModel):
     train_number: str
     train_name: str
@@ -445,17 +430,30 @@ def get_bookings_by_name(name: str):
 
     return {"count": len(df), "bookings": df.to_dict(orient="records")}
 
-
-# ---------- CHATBOT ENDPOINT (TF-IDF based semantic FAQ retrieval) ----------
 @app.get("/chatbot")
 def chatbot_query(query: str):
     """
-    User ka sawal TF-IDF vector mein convert karke, saare FAQ questions se
-    sabse zyada similar wala dhoondta hai (cosine similarity), aur uska
-    answer return karta hai.
+    RAG pipeline:
+    1. RETRIEVAL - user ka sawal TF-IDF se embed karke, sabse similar FAQ dhoondo
+    2. GENERATION - retrieved FAQ ko context ke roop mein Groq LLM ko dekar,
+       ek naturally-phrased answer generate karwao
     Example: /chatbot?query=how do I check my pnr
     """
     log_event("chatbot", query)
+
+    search_intent_keywords = [
+        "cheapest train", "fastest train", "which train", "any train",
+        "trains available", "train from", "trains from", "train to",
+        "trains to", "book a train", "find a train", "find train"
+    ]
+    query_lower = query.lower()
+    if any(keyword in query_lower for keyword in search_intent_keywords):
+        return {
+            "answer": "It looks like you're trying to find a train! I can only help with policy questions (cancellation, Tatkal, PNR, etc.) - please use the Smart Search box above to search for trains.",
+            "matched_question": None,
+            "confidence": None,
+            "generated": False
+        }
 
     query_vector = tfidf_vectorizer.transform([query])
     similarities = sk_cosine_similarity(query_vector, faq_vectors)[0]
@@ -468,17 +466,48 @@ def chatbot_query(query: str):
         return {
             "answer": "I don't have specific information on that. Please check the official IRCTC website or try rephrasing your question.",
             "matched_question": None,
-            "confidence": round(best_score, 2)
+            "confidence": round(best_score, 2),
+            "generated": False
         }
 
+    retrieved_answer = FAQ_DATA[best_idx]["answer"]
+    matched_question = FAQ_DATA[best_idx]["question"]
+
+    if groq_client:
+        try:
+            completion = groq_client.chat.completions.create(
+                model="openai/gpt-oss-20b",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "You are a helpful Indian Railways assistant. Answer the user's question using ONLY the provided context. Keep your answer concise (2-3 sentences) and natural-sounding."
+                    },
+                    {
+                        "role": "user",
+                        "content": f"Context: {retrieved_answer}\n\nQuestion: {query}\n\nAnswer the question using the context above."
+                    }
+                ],
+                max_tokens=150,
+                temperature=0.5
+            )
+            generated_answer = completion.choices[0].message.content
+
+            return {
+                "answer": generated_answer,
+                "matched_question": matched_question,
+                "confidence": round(best_score, 2),
+                "generated": True
+            }
+        except Exception as e:
+            print(f"Groq generation failed, falling back to raw retrieval: {e}")
+
     return {
-        "answer": FAQ_DATA[best_idx]["answer"],
-        "matched_question": FAQ_DATA[best_idx]["question"],
-        "confidence": round(best_score, 2)
+        "answer": retrieved_answer,
+        "matched_question": matched_question,
+        "confidence": round(best_score, 2),
+        "generated": False
     }
 
-
-# ---------- NATURAL LANGUAGE SMART SEARCH ----------
 import re
 
 
@@ -506,23 +535,18 @@ def matches_time_filter(departure_time, filter_type):
 
     if filter_type == "night":      
         return hour >= 20 or hour < 4
-    if filter_type == "morning":     
-        return 4 <= hour < 12
-    if filter_type == "afternoon":
+    if filter_type == "morning":      
+        return 4 <= hour < 1212 
+    if filter_type == "afternoon":  
         return 12 <= hour < 17
-    if filter_type == "evening":
-        return 17 <= hour < 20
+        return 17 <= hour < 20  
+    if filter_type == "evening":    
+
     return True
 
 
 def resolve_station_from_text(conn, text):
-    """
-    Free-text city/station naam se best-matching station code dhoondta hai.
-    Jab multiple stations naam match karte hain (jaise 'Patna Jn' aur 'Patna Ghat'
-    dono 'PATNA' se match honge), hum wo station choose karte hain jiske
-    route mein SABSE ZYADA trains guzarti hain - ye major junction hone ka
-    achha signal hai (chhote halts mein bahut kam trains rukti hain).
-    """
+
     text = text.strip().upper()
     query = """
         SELECT s.station_code, COUNT(t.train_no) AS stop_count
